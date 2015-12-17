@@ -1,0 +1,4 @@
+Check unit percona-cluster/1 has port 3306 opened
+Check unit percona-cluster/1 agent-version is 1.25.0.1
+Check unit percona-cluster/1 agent-state is started
+Check unit percona-cluster/1 command "sudo pgrep mysqld" returns 0
