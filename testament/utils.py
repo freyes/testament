@@ -7,7 +7,6 @@ from cStringIO import StringIO
 import sys
 
 
-
 def run(cmd):
     return subprocess.check_output(shlex.split(cmd), stderr=subprocess.PIPE)
 
