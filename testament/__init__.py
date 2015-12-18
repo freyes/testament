@@ -1,12 +1,18 @@
 import re
 import sys
+import argparse
+import logging
 
-from utils import run, load_yaml, get_environment
+from testament.utils import run, load_yaml, get_environment, Capturing
+from testament.log import setup_logging
 
-from testament.checks.units import checks as unit_checks
-from testament.checks.services import checks as service_checks
+from testament.checks.unit import checks as unit_checks
+from testament.checks.service import checks as service_checks
 
 available_rules = {}
+
+
+logger = logging.getLogger(__name__)
 
 
 class Unit:
@@ -149,20 +155,6 @@ class Environment:
         return None
 
 
-def check(definition):
-    def wrapper(wrapped, *args, **kwargs):
-        compiled = re.compile(".*%s$" % definition)
-        if compiled.pattern not in available_checks.keys():
-            available_checks[compiled.pattern] = {
-                'pattern': compiled,
-                'handler': wrapped
-            }
-        else:
-            raise Exception('Check: "%s", already exists' % definition)
-        return wrapped
-    return wrapper
-
-
 def rule(definition):
     def wrapper(wrapped, *args, **kwargs):
         compiled = re.compile(".*%s$" % definition)
@@ -231,12 +223,23 @@ def parse(context, line):
             return v['handler'](context, *matched.groups())
 
 
+class CheckFailure(object):
+    def __init__(self, handler, arguments, unit, ex):
+        pass
+
+
+class CheckPass(object):
+    def __init__(self, handler, arguments, unit):
+        pass
+
+
 class Context(object):
     valid_providers = ('local', )
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, options):
         self.checks = {}
         self.environment = Environment()
+        self.options = options
 
     def append_check(self, handler, unit, *args):
         if handler not in self.checks.keys():
@@ -244,26 +247,73 @@ class Context(object):
         self.checks[handler].append((unit, args, ))
 
     def run_checks(self):
+
+        self.failures = []
+        self.passes = []
+
         for handler, checks in self.checks.items():
             for params in checks:
                 (unit, argv) = (params)
                 try:
-                    handler(unit, *argv)
+                    if self.options.nocapture:
+                        handler(unit, *argv)
+                    else:
+                        with Capturing():
+                            handler(unit, *argv)
                 except AssertionError as ex:
-                    print "Check %s (params: %s) on unit %s failed, %s" % (
-                        handler.__name__, argv,
-                        unit.name, ex)
-                    sys.exit(-1)
+                    self.failures.append(CheckFailure(handler, argv,
+                                                      unit.name, ex))
+                    logger.warn(
+                        "Check %s (params: %s) on unit %s failed, %s" % (
+                            handler.__name__, argv,
+                            unit.name, ex))
+
+                    if self.options.exit_on_failure:
+                        sys.exit(-1)
                 else:
-                    print "Check %s (params: %s) on unit %s passed :)" % (
-                        handler.__name__, argv, unit.name)
-        sys.exit(0)
+                    self.passes.append(CheckPass(handler, argv, unit.name))
+                    logger.info(
+                        "Check %s (params: %s) on unit %s passed :)" % (
+                            handler.__name__, argv, unit.name))
 
 
-def main():
-    with open(sys.argv[1]) as fd:
-        context = Context()
-        for line in fd.readlines():
-            if not line.startswith('#'):
-                parse(context, line)
-        context.run_checks()
+def setup_options(argv=None):
+    parser = argparse.ArgumentParser(
+        description="""Testament is a descriptive framework"""
+        """for testing juju environments.""")
+    parser.add_argument('-e', '--exit-on-failure', dest='exit_on_failure',
+                        type=bool, default=False,
+                        help="Exit the process if any of the tests fail")
+    parser.add_argument('-f', '--file', dest='files',
+                        type=str, default=[], action='append',
+                        help="Testament files for checks")
+    parser.add_argument('--logfile', dest='logfile',
+                        type=str, default=None,
+                        help="Log to write results")
+    parser.add_argument('--loglevel', dest='loglevel', metavar='LEVEL',
+                        default=logging.DEBUG, help="Set logging level")
+    parser.add_argument('--nocapture', dest='nocapture', type=bool,
+                        default=False, help="No capture stdout output")
+
+    args = parser.parse_args(argv)
+
+    if not args.files:
+        parser.error("Please specify at least one check file --file")
+
+    return args
+
+
+def parse_files(opts):
+    for f in opts.files:
+        with open(f) as fd:
+            context = Context(opts)
+            for line in fd.readlines():
+                if not line.startswith('#'):
+                    parse(context, line)
+            context.run_checks()
+
+
+def main(argv=None):
+    opts = setup_options(argv)
+    setup_logging(filename=opts.logfile, level=opts.loglevel)
+    parse_files(opts)

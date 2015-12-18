@@ -3,6 +3,10 @@ import os
 import shlex
 import yaml
 
+from cStringIO import StringIO
+import sys
+
+
 
 def run(cmd):
     return subprocess.check_output(shlex.split(cmd), stderr=subprocess.PIPE)
@@ -30,3 +34,14 @@ def get_environment():
         except:
             environment = None
     return environment
+
+
+class Capturing(list):
+    def __enter__(self):
+        self._stdout = sys.stdout
+        sys.stdout = self._stringio = StringIO()
+        return self
+
+    def __exit__(self, *args):
+        self.extend(self._stringio.getvalue().splitlines())
+        sys.stdout = self._stdout

@@ -42,5 +42,8 @@ def agent_version(unit, version):
 @check("command (.*) returns ([0-9]+)+")
 def command_returns(unit, command, code):
     output = juju_run_unit(unit.name, command)
+
+    print output
+
     return_code = output.get("ReturnCode", 0)
     assert return_code == int(code)
