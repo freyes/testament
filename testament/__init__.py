@@ -2,7 +2,9 @@ import re
 import sys
 import argparse
 import logging
+import time
 
+from testament.template import load as load_template
 from testament.utils import run, load_yaml, get_environment, Capturing
 from testament.log import setup_logging
 
@@ -234,8 +236,6 @@ class CheckPass(object):
 
 
 class Context(object):
-    valid_providers = ('local', )
-
     def __init__(self, options):
         self.checks = {}
         self.environment = Environment()
@@ -246,11 +246,25 @@ class Context(object):
             self.checks[handler] = []
         self.checks[handler].append((unit, args, ))
 
-    def run_checks(self):
+    def summary(self, started):
+        total = "{0:.2f}".format(time.time() - started)
+        template = load_template(self.options.output_format, {
+            'total': len(self.checks),
+            'failed': len(self.failures),
+            'passed': len(self.passes),
+            'time': total,
+        })
+        if self.options.logfile and self.options.output_format == "generic":
+            with open(self.options.logfile, "a+") as fd:
+                fd.write(template + "\n")
+        else:
+            print template
 
+    def run_checks(self):
         self.failures = []
         self.passes = []
 
+        started = time.time()
         for handler, checks in self.checks.items():
             for params in checks:
                 (unit, argv) = (params)
@@ -263,18 +277,21 @@ class Context(object):
                 except AssertionError as ex:
                     self.failures.append(CheckFailure(handler, argv,
                                                       unit.name, ex))
-                    logger.warn(
-                        "Check %s (params: %s) on unit %s failed, %s" % (
+                    logger.error(
+                        "Check %s (params: %s) on unit %s failed .... :(" % (
                             handler.__name__, argv,
-                            unit.name, ex))
+                            unit.name))
 
                     if self.options.exit_on_failure:
+                        self.summary(started)
                         sys.exit(-1)
                 else:
                     self.passes.append(CheckPass(handler, argv, unit.name))
                     logger.info(
-                        "Check %s (params: %s) on unit %s passed :)" % (
+                        "Check %s (params: %s) on unit %s passed .... :)" % (
                             handler.__name__, argv, unit.name))
+
+        self.summary(started)
 
 
 def setup_options(argv=None):
@@ -294,6 +311,8 @@ def setup_options(argv=None):
                         default=logging.DEBUG, help="Set logging level")
     parser.add_argument('--nocapture', dest='nocapture', type=bool,
                         default=False, help="No capture stdout output")
+    parser.add_argument('--output-format', dest='output_format', type=str,
+                        default="generic", help="Default format to use")
 
     args = parser.parse_args(argv)
 
