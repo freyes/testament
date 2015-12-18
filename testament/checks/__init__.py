@@ -1,5 +1,6 @@
 import re
 
+
 def check(definition):
     def wrapper(wrapped, *args, **kwargs):
         compiled = re.compile(".*%s$" % definition)
@@ -9,7 +10,6 @@ def check(definition):
                 'handler': wrapped
             }
         else:
-            raise Exception('Check: "%s", already exists' % (
-                    definition))
+            raise Exception('Check: "%s", already exists' % definition)
         return wrapped
     return wrapper
