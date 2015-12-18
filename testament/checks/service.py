@@ -16,8 +16,7 @@ def check(definition):
                 'handler': wrapped
             }
         else:
-            raise Exception('Check: "%s", already exists' % (
-                    definition))
+            raise Exception('Check: "%s", already exists' % definition)
         return wrapped
     return wrapper
 
